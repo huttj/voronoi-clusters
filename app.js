@@ -14,7 +14,6 @@
 
     var map, layer;
 
-
     // Load data
     $.ajax({
         url: 'data.json',
@@ -39,36 +38,57 @@
     })();
 
     function decorateMap(data) {
-        // generateClusters
-        var markers = generateClusters(data);
-
-        // addVoronoi
-        addVoronoi(markers);
+        addVoronoi(data);
     }
 
     //
     function generateClusters(data) {
 
-        var markers = new L.MarkerClusterGroup({
-            maxClusterRadius: 100
-        });
+        var clusterThreshold = 200;
+        var clusters = [];
 
-        var i = data.length - 1;
-        while (i--) {
-            markers.addLayer(new L.Marker(getLatLng(data[i])));
+        data.forEach(addToCluster);
+
+        return clusters;
+
+        function addToCluster(point) {
+            var converted = convert(point);
+            findAndInsertNearCluster(converted);
         }
 
-        //... Add more layers ...
-        map.addLayer(markers);
-
-        function getLatLng(point) {
-            return [point.latitude, point.longitude];
+        function convert(point) {
+            return {
+                data: point,
+                coords: map.latLngToLayerPoint([point.latitude, point.longitude])
+            }
         }
 
-        return markers;
+
+        function findAndInsertNearCluster(point) {
+
+            for (var i = 0; i < clusters.length; i++) {
+                var clusterCenter = clusters[i].center;
+                var distance = getDistance(clusterCenter, point.coords);
+
+                if (isNaN(distance)) return;
+
+                if (distance < (clusterThreshold - clusters[i].points.length * 2 )) {
+                    clusters[i].points.push(point);
+                    //clusters[i].center = getCenter(clusters[i].points);
+                    return;
+                }
+            }
+
+            clusters.push({
+                points: [point],
+                center: point.coords
+            });
+        }
+
+
     }
 
-    function addVoronoi(markers) {
+    function addVoronoi(sourceData) {
 
         map.on("viewreset moveend", update);
 
@@ -90,7 +110,9 @@
 
         function update() {
 
-            var data = getPointsFromClusters(markers);
+            var data = generateClusters(sourceData);
+
+            log(data.length)
 
             //ピクセルポジション情報保存用
             var positions = [];
@@ -98,11 +120,8 @@
             // 位置情報→ピクセルポジション変換
             // Location information → pixel position conversion
             data.forEach(function(d) {
-                var latlng = new L.LatLng(d.latitude, d.longitude);
-                positions.push({
-                    x :map.latLngToLayerPoint(latlng).x,
-                    y :map.latLngToLayerPoint(latlng).y
-                });
+                //var latlng = new L.LatLng(d.latitude, d.longitude);
+                positions.push(d.center);
             });
 
 
@@ -153,33 +172,6 @@
         }
     }
 
-    function getPointsFromClusters(markers) {
-        log(markers);
-
-        var clusters = [];
-
-        forIn(markers._gridClusters, function(cluster) {
-            var verts = [];
-            forIn(cluster._objectPoint, function(vert) {
-                log(vert);
-                verts.push([vert.x, vert.y]);
-            });
-            clusters.push(verts);
-        });
-
-        var points = clusters.map(getCenter);
-
-        //forIn(markers._gridUnclustered, function(point) {
-        //    point = point._objectPoint;
-        //    points.push([point.x, point.y]);
-        //});
-
-        log(points);
-
-        return points;
-    }
-
-
     function forIn(obj, fn) {
         for (var key in obj) {
             if (obj.hasOwnProperty(key)) {
@@ -191,12 +183,19 @@
     function getCenter(arr){
         var minX, maxX, minY, maxY;
         for(var i=0; i< arr.length; i++){
-            minX = (arr[i][0] < minX || minX == null) ? arr[i][0] : minX;
-            maxX = (arr[i][0] > maxX || maxX == null) ? arr[i][0] : maxX;
-            minY = (arr[i][1] < minY || minY == null) ? arr[i][1] : minY;
-            maxY = (arr[i][1] > maxY || maxY == null) ? arr[i][1] : maxY;
+            minX = (arr[i].coords.x < minX || minX == null) ? arr[i].coords.x : minX;
+            maxX = (arr[i].coords.x > maxX || maxX == null) ? arr[i].coords.x : maxX;
+            minY = (arr[i].coords.y < minY || minY == null) ? arr[i].coords.y : minY;
+            maxY = (arr[i].coords.y > maxY || maxY == null) ? arr[i].coords.y : maxY;
         }
-        return [(minX + maxX) /2, (minY + maxY) /2];
+        return {
+            x: (minX + maxX) /2,
+            y: (minY + maxY) /2
+        };
+    }
+
+    function getDistance(pt1, pt2) {
+        return Math.sqrt(Math.pow(pt1.x - pt2.x, 2) + Math.pow(pt1.y - pt2.x, 2));
     }
 }
 
