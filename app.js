@@ -44,7 +44,7 @@
     //
     function generateClusters(data) {
 
-        var clusterThreshold = 200;
+        var clusterThreshold = 300;
         var clusters = [];
 
         data.forEach(addToCluster);
@@ -72,9 +72,9 @@
 
                 if (isNaN(distance)) return;
 
-                if (distance < (clusterThreshold - clusters[i].points.length * 2 )) {
+                if (distance < (clusterThreshold - clusters[i].points.length * 5)) {
                     clusters[i].points.push(point);
-                    //clusters[i].center = getCenter(clusters[i].points);
+                    clusters[i].center = getCenter(clusters[i].points);
                     return;
                 }
             }
@@ -89,6 +89,8 @@
     }
 
     function addVoronoi(sourceData) {
+
+        var pointCount;
 
         map.on("viewreset moveend", update);
 
@@ -112,7 +114,8 @@
 
             var data = generateClusters(sourceData);
 
-            log(data.length)
+            pointCount = data.length;
+            console.log('pointCount', pointCount);
 
             //ピクセルポジション情報保存用
             var positions = [];
@@ -166,9 +169,20 @@
                         return "M" + d.cell.join("L") + "Z";
                     },
                     stroke:"black",
-                    fill:"none"
+                    fill: getFill
                 });
 
+            function getFill(d) {
+                if (!d) return 'none';
+                for (var i = 0; i < data.length; i++) {
+                    if (data[i].center === d.point) {
+                        var percent = pointCount / data[i].points.length;
+                        var n = 255 - Math.round(percent * (200 / pointCount) + 55);
+                        return 'rgba(' + n + ', 0, 0, .25)';
+                    }
+                }
+                return 'none';
+            }
         }
     }
 
