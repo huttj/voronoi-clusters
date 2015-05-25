@@ -38,61 +38,46 @@
     })();
 
     function decorateMap(data) {
-        addVoronoi(data);
+        var markers = clusterize(data);
+        console.log(markers);
+        addVoronoi(markers);
     }
 
-    //
-    function generateClusters(data) {
-
-        var clusterThreshold = 300;
-        var clusters = [];
-
-        data.forEach(addToCluster);
-
-        return clusters;
-
-        function addToCluster(point) {
-            var converted = convert(point);
-            findAndInsertNearCluster(converted);
-        }
-
-        function convert(point) {
-            return {
-                data: point,
-                coords: map.latLngToLayerPoint([point.latitude, point.longitude])
-            }
-        }
-
-
-        function findAndInsertNearCluster(point) {
-
-            for (var i = 0; i < clusters.length; i++) {
-                var clusterCenter = clusters[i].center;
-                var distance = getDistance(clusterCenter, point.coords);
-
-                if (isNaN(distance)) return;
-
-                if (distance < (clusterThreshold - clusters[i].points.length * 5)) {
-                    clusters[i].points.push(point);
-                    clusters[i].center = getCenter(clusters[i].points);
-                    return;
-                }
-            }
-
-            clusters.push({
-                points: [point],
-                center: point.coords
+    function getPointsFromClusters(markers) {
+        points = [];
+        forIn(markers._featureGroup._layers, function(cluster) {
+            var point = map.latLngToLayerPoint([cluster._latlng.lat, cluster._latlng.lng]);
+            points.push({
+                point: point,
+                data: cluster.getAllChildMarkers ? cluster.getAllChildMarkers().map(function(n) { return n.data; }) : cluster.data
             });
-        }
+        });
+        return points;
+    }
 
-
+    function clusterize(data) {
+        var markers = new L.MarkerClusterGroup({
+            singleMarkerMode: true,
+            iconCreateFunction: function(cluster) {
+                return new L.DivIcon({ html: cluster.getChildCount() });
+            }
+        });
+        data.forEach(function(point) {
+            var marker = new L.Marker([point.latitude, point.longitude]);
+            marker.data = point;
+            markers.addLayer(marker);
+        });
+        map.addLayer(markers);
+        return markers;
     }
 
     function addVoronoi(sourceData) {
 
         var pointCount;
 
-        map.on("viewreset moveend", update);
+        map.on("viewreset", clear);
+
+        sourceData.on('animationend', update);
 
         // オーバーレイレイヤ追加
         map._initPathRoot();
@@ -105,28 +90,25 @@
             .x(function(d) { return d.x; })
             .y(function(d) { return d.y; });
 
-
-
         update();
-
 
         function update() {
 
-            var data = generateClusters(sourceData);
+            // For manually clustered data
+            var data = getPointsFromClusters(sourceData);
+            var biggestCluster = data.reduce(function(last, next) {
+                return Math.max(last, next.data.length || 1);
+            }, 1);
 
             pointCount = data.length;
-            console.log('pointCount', pointCount);
-
-            //ピクセルポジション情報保存用
-            var positions = [];
 
             // 位置情報→ピクセルポジション変換
             // Location information → pixel position conversion
-            data.forEach(function(d) {
-                //var latlng = new L.LatLng(d.latitude, d.longitude);
-                positions.push(d.center);
-            });
 
+            //ピクセルポジション情報保存用
+            var positions = data.map(function(d) {
+                return d.point;
+            });
 
             // 前サークルを削除
             // Remove before Circle
@@ -168,21 +150,38 @@
                         if(!d) return null;
                         return "M" + d.cell.join("L") + "Z";
                     },
-                    stroke:"black",
+                    stroke:"rgba(255,255,255,.33)",
                     fill: getFill
                 });
 
             function getFill(d) {
                 if (!d) return 'none';
+
                 for (var i = 0; i < data.length; i++) {
-                    if (data[i].center === d.point) {
-                        var percent = pointCount / data[i].points.length;
-                        var n = 255 - Math.round(percent * (200 / pointCount) + 55);
-                        return 'rgba(' + n + ', 0, 0, .25)';
+                    if (data[i].point.x === d.point.x && data[i].point.y === d.point.y) {
+                        var n = data[i].data.length || 1;
+                        var tenth = biggestCluster / 10;
+                        var centile = Math.ceil(n / tenth);
+
+                        var c = Math.round(55 + (20 * centile));
+
+                        console.log(n, c);
+
+                        return 'rgba(' + c + ', 0, 0, .25)';
                     }
                 }
                 return 'none';
             }
+        }
+
+        function clear() {
+            // 前サークルを削除
+            // Remove before Circle
+            d3.selectAll('.AEDpoint').remove();
+
+            // 前ボロノイPathを削除
+            // Before remove the Voronoi Path
+            svg.selectAll(".volonoi").remove();
         }
     }
 
@@ -192,24 +191,6 @@
                 fn(obj[key]);
             }
         }
-    }
-
-    function getCenter(arr){
-        var minX, maxX, minY, maxY;
-        for(var i=0; i< arr.length; i++){
-            minX = (arr[i].coords.x < minX || minX == null) ? arr[i].coords.x : minX;
-            maxX = (arr[i].coords.x > maxX || maxX == null) ? arr[i].coords.x : maxX;
-            minY = (arr[i].coords.y < minY || minY == null) ? arr[i].coords.y : minY;
-            maxY = (arr[i].coords.y > maxY || maxY == null) ? arr[i].coords.y : maxY;
-        }
-        return {
-            x: (minX + maxX) /2,
-            y: (minY + maxY) /2
-        };
-    }
-
-    function getDistance(pt1, pt2) {
-        return Math.sqrt(Math.pow(pt1.x - pt2.x, 2) + Math.pow(pt1.y - pt2.x, 2));
     }
 }
 

@@ -7,3 +7,17 @@ html, body{
     width:100%;
     height: 100vh;
 }
+
+p.cluster {
+
+}
+
+.leaflet-div-icon {
+    height: 24px !important;
+    width: 30px !important;
+    background: white;
+    border-radius: 100%;
+    color: black;
+    text-align: center;
+    padding-top: 6px;
+}
