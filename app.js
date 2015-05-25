@@ -12,7 +12,7 @@
         console.log.apply(console, args);
     };
 
-    var map, layer;
+    //var map, layer;
 
     // Load data
     $.ajax({
@@ -33,6 +33,7 @@
 
         // Create an OpenStreetMap tile layer variable using their url: 'http://{s}.tile.osm.org/{z}/{x}/{y}.png'
         // syntax: var LAYER_VARIABLE = L.tileLayer('URL')
+        //layer = L.tileLayer('http://{s}.tile.osm.org/{z}/{x}/{y}.png').addTo(map);
         layer = L.tileLayer('http://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png').addTo(map);
 
     })();
@@ -49,6 +50,7 @@
             var point = map.latLngToLayerPoint([cluster._latlng.lat, cluster._latlng.lng]);
             points.push({
                 point: point,
+                latlng: cluster._latlng,
                 data: cluster.getAllChildMarkers ? cluster.getAllChildMarkers().map(function(n) { return n.data; }) : cluster.data
             });
         });
@@ -73,17 +75,16 @@
 
     function addVoronoi(sourceData) {
 
-        var pointCount;
+        var pointCount, data, biggestVisibleCluster, bounds;
 
-        map.on("viewreset", clear);
-
+        map.on("zoomstart", clear);
+        map.on("dragend", dragend);
         sourceData.on('animationend', update);
 
         // オーバーレイレイヤ追加
         map._initPathRoot();
         var svg = d3.select("#map").select("svg");
-        var g = svg.append("g").attr("class", "leaflet-zoom-hide");;
-
+        var g = svg.append("g").attr("class", "leaflet-zoom-hide");
 
         //ボロノイジェネレーター
         var voronoi = d3.geom.voronoi()
@@ -92,42 +93,45 @@
 
         update();
 
-        function update() {
+        function update(e) {
+            clear();
+            getPoints();
+            redraw();
+        }
+
+        function dragend() {
+            getPoints();
+            redraw();
+        }
+
+        function clear() {
+            svg.selectAll(".volonoi").remove();
+        }
+
+        function getPoints() {
 
             // For manually clustered data
-            var data = getPointsFromClusters(sourceData);
-            var biggestCluster = data.reduce(function(last, next) {
-                return Math.max(last, next.data.length || 1);
-            }, 1);
+            data = getPointsFromClusters(sourceData);
 
             pointCount = data.length;
 
-            // 位置情報→ピクセルポジション変換
-            // Location information → pixel position conversion
-
-            //ピクセルポジション情報保存用
-            var positions = data.map(function(d) {
+            positions = data.map(function(d) {
                 return d.point;
             });
 
-            // 前サークルを削除
-            // Remove before Circle
-            d3.selectAll('.AEDpoint').remove();
+            bounds = map.getBounds();
 
-            // サークル要素を追加
-            // Add Circle element
-            var circle = g.selectAll("circle")
-                .data(positions)
-                .enter()
-                .append("circle")
-                .attr("class", "AEDpoint")
-                .attr({
-                    "cx":function(d, i) { return d.x; },
-                    "cy":function(d, i) { return d.y; },
-                    "r":2,
-                    fill:"red"
-                });
+            biggestVisibleCluster = data.reduce(function(last, next) {
+                var isVisible = bounds.contains(next.latlng);
+                if (isVisible) {
+                    last = Math.max(last, next.data.length || 1);
+                }
+                //log(last);
+                return last;
+            }, 1);
+        }
 
+        function redraw() {
 
             // ボロノイ変換関数
             // Voronoi conversion function
@@ -135,8 +139,6 @@
 
             polygons.forEach(function(v) { v.cell = v; });
 
-            // 前ボロノイPathを削除
-            // Before remove the Voronoi Path
             svg.selectAll(".volonoi").remove();
 
             // Add path element
@@ -146,43 +148,30 @@
                 .append("svg:path")
                 .attr("class", "volonoi")
                 .attr({
-                    "d": function(d) {
-                        if(!d) return null;
+                    "d": function (d) {
+                        if (!d) return null;
                         return "M" + d.cell.join("L") + "Z";
                     },
-                    stroke:"rgba(255,255,255,.33)",
+                    stroke: "rgba(255,255,255,.33)",
                     fill: getFill
                 });
+        }
 
-            function getFill(d) {
-                if (!d) return 'none';
+        function getFill(d) {
+            if (!d) return 'none';
 
-                for (var i = 0; i < data.length; i++) {
-                    if (data[i].point.x === d.point.x && data[i].point.y === d.point.y) {
-                        var n = data[i].data.length || 1;
-                        var tenth = biggestCluster / 10;
-                        var centile = Math.ceil(n / tenth);
-
-                        var c = Math.round(55 + (20 * centile));
-
-                        console.log(n, c);
-
-                        return 'rgba(' + c + ', 0, 0, .25)';
-                    }
+            for (var i = 0; i < data.length; i++) {
+                if (data[i].point.x === d.point.x && data[i].point.y === d.point.y) {
+                    var n = data[i].data.length || 1;
+                    var tenth = biggestVisibleCluster / 10;
+                    var centile = Math.ceil(n / tenth);
+                    var c = Math.round(55 + (20 * centile));
+                    return 'rgba(' + c + ', 0, 0, .25)';
                 }
-                return 'none';
             }
+            return 'none';
         }
 
-        function clear() {
-            // 前サークルを削除
-            // Remove before Circle
-            d3.selectAll('.AEDpoint').remove();
-
-            // 前ボロノイPathを削除
-            // Before remove the Voronoi Path
-            svg.selectAll(".volonoi").remove();
-        }
     }
 
     function forIn(obj, fn) {
